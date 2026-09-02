@@ -43,7 +43,20 @@ export default function TestPage() {
           (scores.T >= scores.F ? 'T' : 'F') +
           (scores.J >= scores.P ? 'J' : 'P');
 
-        router.push(`/result?type=${result}`);
+        // 传递各维度得分
+        const params = new URLSearchParams({
+          type: result,
+          e: String(scores.E),
+          i: String(scores.I),
+          s: String(scores.S),
+          n: String(scores.N),
+          t: String(scores.T),
+          f: String(scores.F),
+          j: String(scores.J),
+          p: String(scores.P),
+        });
+
+        router.push(`/result?${params.toString()}`);
       }
       setAnimating(false);
     }, 300);

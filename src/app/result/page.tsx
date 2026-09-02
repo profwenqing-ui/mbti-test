@@ -4,19 +4,113 @@ import { useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { getMBTIType, type MBTIType } from '@/data/mbti-types';
+import { getRelations, getRelationLevelColor, getRelationLevelLabel } from '@/data/mbti-relations';
+
+// 统计数据类型
+interface StatsData {
+  totalTests: number;
+  typeCounts: Record<string, number>;
+}
+
+const STORAGE_KEY = 'mbti_stats';
+
+function getStats(): StatsData {
+  if (typeof window === 'undefined') return { totalTests: 0, typeCounts: {} };
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : { totalTests: 0, typeCounts: {} };
+  } catch {
+    return { totalTests: 0, typeCounts: {} };
+  }
+}
+
+function saveResult(typeCode: string) {
+  const stats = getStats();
+  stats.totalTests += 1;
+  stats.typeCounts[typeCode] = (stats.typeCounts[typeCode] || 0) + 1;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
+}
+
+// 维度配置
+const DIMENSIONS = [
+  { key: 'EI', label: '能量来源', left: 'E 外向', right: 'I 内向', leftColor: '#C4908E', rightColor: '#C4908E' },
+  { key: 'SN', label: '信息获取', left: 'S 实感', right: 'N 直觉', leftColor: '#7B9AAF', rightColor: '#7B9AAF' },
+  { key: 'TF', label: '决策方式', left: 'T 理性', right: 'F 感性', leftColor: '#9B8EC4', rightColor: '#9B8EC4' },
+  { key: 'JP', label: '生活态度', left: 'J 计划', right: 'P 灵活', leftColor: '#7EA685', rightColor: '#7EA685' },
+];
 
 function ResultContent() {
   const searchParams = useSearchParams();
   const typeCode = searchParams.get('type') || 'INTJ';
-  const [mbtiType, setMbtiType] = useState<MBTIType | null>(null);
+  const scores = {
+    e: Number(searchParams.get('e')) || 0,
+    i: Number(searchParams.get('i')) || 0,
+    s: Number(searchParams.get('s')) || 0,
+    n: Number(searchParams.get('n')) || 0,
+    t: Number(searchParams.get('t')) || 0,
+    f: Number(searchParams.get('f')) || 0,
+    j: Number(searchParams.get('j')) || 0,
+    p: Number(searchParams.get('p')) || 0,
+  };
+
+  const mbtiType = getMBTIType(typeCode);
   const [mounted, setMounted] = useState(false);
+  const [stats, setStats] = useState<StatsData>({ totalTests: 0, typeCounts: {} });
+  const [selectedRelation, setSelectedRelation] = useState<string | null>(null);
+  const [showStats, setShowStats] = useState(false);
+  const [showRelations, setShowRelations] = useState(false);
+
+  const relations = getRelations(typeCode);
+
+  // 计算维度百分比
+  const dimensionPercentages = (() => {
+    const eiTotal = scores.e + scores.i;
+    const snTotal = scores.s + scores.n;
+    const tfTotal = scores.t + scores.f;
+    const jpTotal = scores.j + scores.p;
+
+    const typeChar = typeCode.split('');
+
+    return [
+      {
+        key: 'EI',
+        leftPercent: eiTotal > 0 ? Math.round((scores.e / eiTotal) * 100) : 50,
+        rightPercent: eiTotal > 0 ? Math.round((scores.i / eiTotal) * 100) : 50,
+        dominant: typeChar[0],
+      },
+      {
+        key: 'SN',
+        leftPercent: snTotal > 0 ? Math.round((scores.s / snTotal) * 100) : 50,
+        rightPercent: snTotal > 0 ? Math.round((scores.n / snTotal) * 100) : 50,
+        dominant: typeChar[1],
+      },
+      {
+        key: 'TF',
+        leftPercent: tfTotal > 0 ? Math.round((scores.t / tfTotal) * 100) : 50,
+        rightPercent: tfTotal > 0 ? Math.round((scores.f / tfTotal) * 100) : 50,
+        dominant: typeChar[2],
+      },
+      {
+        key: 'JP',
+        leftPercent: jpTotal > 0 ? Math.round((scores.j / jpTotal) * 100) : 50,
+        rightPercent: jpTotal > 0 ? Math.round((scores.p / jpTotal) * 100) : 50,
+        dominant: typeChar[3],
+      },
+    ];
+  })();
 
   useEffect(() => {
-    setMbtiType(getMBTIType(typeCode));
+    saveResult(typeCode);
+    setStats(getStats());
     setMounted(true);
   }, [typeCode]);
 
   if (!mbtiType) return null;
+
+  // 类型统计排序
+  const sortedTypes = Object.entries(stats.typeCounts)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 8);
 
   return (
     <main className="min-h-screen bg-[#FAF9F6] py-12 px-6">
@@ -25,7 +119,7 @@ function ResultContent() {
           mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
         }`}
       >
-        {/* 结果头部 */}
+        {/* ===== 结果头部 ===== */}
         <div className="text-center mb-12">
           <div
             className="inline-flex items-center justify-center w-20 h-20 rounded-full mb-6"
@@ -45,7 +139,71 @@ function ResultContent() {
           <p className="text-[#2D2A26]/60 text-lg">{mbtiType.title}</p>
         </div>
 
-        {/* 描述 */}
+        {/* ===== 维度得分可视化（新增） ===== */}
+        <div className="bg-white/60 backdrop-blur-sm rounded-3xl p-6 md:p-8 mb-8 border border-[#2D2A26]/5">
+          <h2 className="text-lg font-semibold text-[#2D2A26] mb-6 flex items-center gap-2">
+            <span className="w-1 h-5 rounded-full bg-[#D4A574]" />
+            维度倾向分析
+          </h2>
+          <div className="space-y-5">
+            {dimensionPercentages.map((dim) => {
+              const config = DIMENSIONS.find((d) => d.key === dim.key)!;
+              const isLeftDominant = dim.dominant === config.key[0];
+              const leftPct = isLeftDominant ? Math.max(dim.leftPercent, 52) : Math.min(dim.leftPercent, 48);
+              const rightPct = isLeftDominant ? Math.min(dim.rightPercent, 48) : Math.max(dim.rightPercent, 52);
+
+              return (
+                <div key={dim.key}>
+                  <div className="flex justify-between text-xs text-[#2D2A26]/50 mb-1.5">
+                    <span style={{ color: config.leftColor }}>{config.left}</span>
+                    <span style={{ color: config.rightColor }}>{config.right}</span>
+                  </div>
+                  <div className="relative h-8 bg-[#2D2A26]/5 rounded-full overflow-hidden">
+                    {/* 左半部分 */}
+                    <div
+                      className="absolute left-0 top-0 h-full rounded-l-full transition-all duration-1000 ease-out"
+                      style={{
+                        width: `${leftPct}%`,
+                        backgroundColor: config.leftColor + '40',
+                      }}
+                    />
+                    {/* 右半部分 */}
+                    <div
+                      className="absolute right-0 top-0 h-full rounded-r-full transition-all duration-1000 ease-out"
+                      style={{
+                        width: `${rightPct}%`,
+                        backgroundColor: config.rightColor + '40',
+                      }}
+                    />
+                    {/* 滑块指示器 */}
+                    <div
+                      className="absolute top-0 h-full w-1 rounded-full transition-all duration-1000 ease-out"
+                      style={{
+                        left: `${leftPct}%`,
+                        backgroundColor: isLeftDominant ? config.leftColor : config.rightColor,
+                        boxShadow: '0 0 6px rgba(0,0,0,0.1)',
+                      }}
+                    />
+                    {/* 百分比文字 */}
+                    <div className="absolute inset-0 flex items-center justify-between px-4 text-sm font-medium">
+                      <span style={{ color: config.leftColor, opacity: leftPct > 30 ? 1 : 0.6 }}>
+                        {isLeftDominant ? `${leftPct}%` : ''}
+                      </span>
+                      <span className="text-[#2D2A26] text-xs font-bold">
+                        {dim.dominant}
+                      </span>
+                      <span style={{ color: config.rightColor, opacity: rightPct > 30 ? 1 : 0.6 }}>
+                        {!isLeftDominant ? `${rightPct}%` : ''}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ===== 性格特征 ===== */}
         <div className="bg-white/60 backdrop-blur-sm rounded-3xl p-8 mb-8 border border-[#2D2A26]/5">
           <h2 className="text-lg font-semibold text-[#2D2A26] mb-4 flex items-center gap-2">
             <span className="w-1 h-5 rounded-full" style={{ backgroundColor: mbtiType.color }} />
@@ -56,7 +214,7 @@ function ResultContent() {
           </p>
         </div>
 
-        {/* 优势与成长 */}
+        {/* ===== 优势与成长 ===== */}
         <div className="grid md:grid-cols-2 gap-6 mb-8">
           <div className="bg-white/60 backdrop-blur-sm rounded-3xl p-6 border border-[#2D2A26]/5">
             <h3 className="text-base font-semibold text-[#2D2A26] mb-4 flex items-center gap-2">
@@ -65,20 +223,13 @@ function ResultContent() {
             </h3>
             <ul className="space-y-2">
               {mbtiType.strengths.map((s, i) => (
-                <li
-                  key={i}
-                  className="flex items-center gap-2 text-[#2D2A26]/70"
-                >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: mbtiType.color }}
-                  />
+                <li key={i} className="flex items-center gap-2 text-[#2D2A26]/70">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: mbtiType.color }} />
                   {s}
                 </li>
               ))}
             </ul>
           </div>
-
           <div className="bg-white/60 backdrop-blur-sm rounded-3xl p-6 border border-[#2D2A26]/5">
             <h3 className="text-base font-semibold text-[#2D2A26] mb-4 flex items-center gap-2">
               <span className="text-lg">🌱</span>
@@ -86,11 +237,8 @@ function ResultContent() {
             </h3>
             <ul className="space-y-2">
               {mbtiType.weaknesses.map((w, i) => (
-                <li
-                  key={i}
-                  className="flex items-center gap-2 text-[#2D2A26]/70"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#2D2A26]/20" />
+                <li key={i} className="flex items-center gap-2 text-[#2D2A26]/70">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-[#2D2A26]/20" />
                   {w}
                 </li>
               ))}
@@ -98,7 +246,7 @@ function ResultContent() {
           </div>
         </div>
 
-        {/* 适合的职业 */}
+        {/* ===== 适合的职业 ===== */}
         <div className="bg-white/60 backdrop-blur-sm rounded-3xl p-8 mb-8 border border-[#2D2A26]/5">
           <h2 className="text-lg font-semibold text-[#2D2A26] mb-4 flex items-center gap-2">
             <span className="w-1 h-5 rounded-full" style={{ backgroundColor: mbtiType.color }} />
@@ -121,25 +269,181 @@ function ResultContent() {
           </div>
         </div>
 
-        {/* 代表人物 */}
-        <div className="bg-white/60 backdrop-blur-sm rounded-3xl p-8 mb-12 border border-[#2D2A26]/5">
+        {/* ===== 代表人物 ===== */}
+        <div className="bg-white/60 backdrop-blur-sm rounded-3xl p-8 mb-8 border border-[#2D2A26]/5">
           <h2 className="text-lg font-semibold text-[#2D2A26] mb-4 flex items-center gap-2">
             <span className="w-1 h-5 rounded-full" style={{ backgroundColor: mbtiType.color }} />
             同类型的知名人物
           </h2>
           <div className="flex flex-wrap gap-3">
             {mbtiType.famousPeople.map((person, i) => (
-              <span
-                key={i}
-                className="px-4 py-2 rounded-full text-sm bg-[#2D2A26]/5 text-[#2D2A26]/70"
-              >
+              <span key={i} className="px-4 py-2 rounded-full text-sm bg-[#2D2A26]/5 text-[#2D2A26]/70">
                 {person}
               </span>
             ))}
           </div>
         </div>
 
-        {/* 操作按钮 */}
+        {/* ===== 趣味交互：人格关系图谱（新增） ===== */}
+        <div className="bg-white/60 backdrop-blur-sm rounded-3xl p-6 md:p-8 mb-8 border border-[#2D2A26]/5">
+          <button
+            onClick={() => setShowRelations(!showRelations)}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <h2 className="text-lg font-semibold text-[#2D2A26] flex items-center gap-2">
+              <span className="w-1 h-5 rounded-full bg-[#D4A574]" />
+              人格关系图谱
+            </h2>
+            <span className={`text-[#2D2A26]/30 transition-transform duration-300 ${showRelations ? 'rotate-180' : ''}`}>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </span>
+          </button>
+
+          {showRelations && (
+            <div className="mt-6 space-y-4 animate-in fade-in duration-300">
+              <p className="text-sm text-[#2D2A26]/50 mb-4">
+                看看你的性格类型与其他类型有哪些奇妙关系？
+              </p>
+
+              {/* 关系等级图例 */}
+              <div className="flex flex-wrap gap-4 mb-6 text-xs">
+                {[
+                  { level: 'perfect', label: '灵魂伴侣' },
+                  { level: 'good', label: '知己搭档' },
+                  { level: 'balanced', label: '互补成长' },
+                  { level: 'challenge', label: '挑战启发' },
+                ].map((item) => (
+                  <div key={item.level} className="flex items-center gap-1.5">
+                    <span
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: getRelationLevelColor(item.level) }}
+                    />
+                    <span className="text-[#2D2A26]/60">{item.label}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* 关系卡片列表 */}
+              <div className="grid md:grid-cols-2 gap-3">
+                {relations.map((rel) => {
+                  const isSelected = selectedRelation === rel.type;
+                  const relType = getMBTIType(rel.type);
+                  return (
+                    <div
+                      key={rel.type}
+                      onClick={() => setSelectedRelation(isSelected ? null : rel.type)}
+                      className="p-4 rounded-2xl border cursor-pointer transition-all duration-300 hover:-translate-y-0.5"
+                      style={{
+                        borderColor: isSelected
+                          ? getRelationLevelColor(rel.level)
+                          : '#2D2A26' + '10',
+                        backgroundColor: isSelected
+                          ? getRelationLevelColor(rel.level) + '08'
+                          : 'transparent',
+                      }}
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="text-2xl">{relType.emoji}</span>
+                        <div>
+                          <div className="font-semibold text-[#2D2A26]">
+                            {rel.type} {relType.nickname}
+                          </div>
+                          <span
+                            className="text-xs font-medium"
+                            style={{ color: getRelationLevelColor(rel.level) }}
+                          >
+                            {rel.label}
+                          </span>
+                        </div>
+                        <span
+                          className="ml-auto w-2 h-2 rounded-full"
+                          style={{ backgroundColor: getRelationLevelColor(rel.level) }}
+                        />
+                      </div>
+                      {isSelected && (
+                        <p className="text-sm text-[#2D2A26]/60 mt-2 pl-11 animate-in fade-in duration-200">
+                          {rel.desc}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ===== 数据统计（新增） ===== */}
+        <div className="bg-white/60 backdrop-blur-sm rounded-3xl p-6 md:p-8 mb-8 border border-[#2D2A26]/5">
+          <button
+            onClick={() => setShowStats(!showStats)}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <h2 className="text-lg font-semibold text-[#2D2A26] flex items-center gap-2">
+              <span className="w-1 h-5 rounded-full bg-[#D4A574]" />
+              📊 测试数据统计
+            </h2>
+            <span className={`text-[#2D2A26]/30 transition-transform duration-300 ${showStats ? 'rotate-180' : ''}`}>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </span>
+          </button>
+
+          {showStats && (
+            <div className="mt-6 animate-in fade-in duration-300">
+              <div className="text-center mb-6">
+                <div className="text-3xl font-bold text-[#2D2A26]">{stats.totalTests}</div>
+                <div className="text-sm text-[#2D2A26]/50">累计测试人数</div>
+              </div>
+
+              {sortedTypes.length > 0 && (
+                <div className="space-y-3">
+                  {sortedTypes.map(([type, count]) => {
+                    const t = getMBTIType(type);
+                    const pct = stats.totalTests > 0
+                      ? Math.round((count / stats.totalTests) * 100)
+                      : 0;
+                    return (
+                      <div key={type} className="flex items-center gap-3">
+                        <span className="text-sm w-8 text-center">{t.emoji}</span>
+                        <div className="flex-1">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-[#2D2A26] font-medium">{type}</span>
+                            <span className="text-[#2D2A26]/50">{count}人 ({pct}%)</span>
+                          </div>
+                          <div className="h-2 bg-[#2D2A26]/5 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-1000"
+                              style={{
+                                width: `${pct}%`,
+                                backgroundColor: t.color,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {sortedTypes.length === 0 && (
+                <p className="text-center text-sm text-[#2D2A26]/40">
+                  还没有统计数据，快来成为第一个测试者吧！
+                </p>
+              )}
+
+              <p className="mt-4 text-xs text-[#2D2A26]/30 text-center">
+                * 数据仅保存在本地浏览器中，清除数据会丢失
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* ===== 操作按钮 ===== */}
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link
             href="/test"
@@ -164,7 +468,7 @@ export default function ResultPage() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-[#FAF9F6] flex items-center justify-center">
-          <div className="text-[#2D2A26]/50">加载中...</div>
+          <div className="text-[#2D2A26]/50 animate-pulse">加载中...</div>
         </div>
       }
     >
