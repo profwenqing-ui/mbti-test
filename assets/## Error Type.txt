@@ -1,0 +1,62 @@
+## Error Type
+Console Error
+
+## Error Message
+A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          data-inspector-line="32"
+                          data-inspector-column="4"
+                          data-inspector-relative-path="src/app/layout.tsx"
+                          lang="en"
+-                         style={{-webkit-touch-callout:"none"}}
+                        >
+                  ...
+
+
+
+    at createConsoleError (.next/dev/static/chunks/5a353_next_dist_1ec5a425._.js:2199:80)
+    at handleConsoleError (.next/dev/static/chunks/5a353_next_dist_1ec5a425._.js:2980:54)
+    at error (.next/dev/static/chunks/5a353_next_dist_1ec5a425._.js:3124:57)
+    at <unknown> (.next/dev/static/chunks/5a353_next_dist_compiled_react-dom_535b25e7._.js:3469:30)
+    at runWithFiberInDEV (.next/dev/static/chunks/5a353_next_dist_compiled_react-dom_535b25e7._.js:965:139)
+    at emitPendingHydrationWarnings (.next/dev/static/chunks/5a353_next_dist_compiled_react-dom_535b25e7._.js:3468:30)
+    at completeWork (.next/dev/static/chunks/5a353_next_dist_compiled_react-dom_535b25e7._.js:6897:130)
+    at runWithFiberInDEV (.next/dev/static/chunks/5a353_next_dist_compiled_react-dom_535b25e7._.js:965:139)
+    at completeUnitOfWork (.next/dev/static/chunks/5a353_next_dist_compiled_react-dom_535b25e7._.js:9627:40)
+    at performUnitOfWork (.next/dev/static/chunks/5a353_next_dist_compiled_react-dom_535b25e7._.js:9564:46)
+    at workLoopConcurrentByScheduler (.next/dev/static/chunks/5a353_next_dist_compiled_react-dom_535b25e7._.js:9558:75)
+    at renderRootConcurrent (.next/dev/static/chunks/5a353_next_dist_compiled_react-dom_535b25e7._.js:9541:100)
+    at performWorkOnRoot (.next/dev/static/chunks/5a353_next_dist_compiled_react-dom_535b25e7._.js:9068:170)
+    at performWorkOnRootViaSchedulerTask (.next/dev/static/chunks/5a353_next_dist_compiled_react-dom_535b25e7._.js:10230:26)
+    at performWorkUntilDeadline (.next/dev/static/chunks/5a353_next_dist_compiled_bf93d0e1._.js:2647:72)
+    at html (unknown:0:0)
+
+Next.js version: 16.1.1 (Turbopack)
