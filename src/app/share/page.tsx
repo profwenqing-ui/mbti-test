@@ -1,29 +1,13 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import QRCode from 'qrcode';
+import { QRCodeCanvas } from 'qrcode.react';
 
 const APP_URL = 'https://d2eb77d3-85b6-4928-b987-808209b9c974.dev.coze.site';
 
 export default function SharePage() {
-  const [mounted, setMounted] = useState(false);
   const [copied, setCopied] = useState(false);
-  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    setMounted(true);
-    if (qrCanvasRef.current) {
-      QRCode.toCanvas(qrCanvasRef.current, APP_URL, {
-        width: 200,
-        margin: 2,
-        color: {
-          dark: '#2D2A26',
-          light: '#FAF9F6',
-        },
-      });
-    }
-  }, []);
 
   const handleCopyLink = async () => {
     try {
@@ -31,7 +15,6 @@ export default function SharePage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // fallback
       const input = document.createElement('input');
       input.value = APP_URL;
       document.body.appendChild(input);
@@ -59,22 +42,18 @@ export default function SharePage() {
     }
   };
 
-  if (!mounted) return null;
-
   return (
     <div className="min-h-screen bg-[#FAF9F6] flex items-center justify-center p-4">
       {/* 宣传卡片 */}
       <div className="w-full max-w-[400px] bg-white rounded-3xl shadow-lg overflow-hidden">
         {/* 顶部装饰区 */}
         <div className="relative h-48 bg-gradient-to-br from-[#D4A574]/20 via-[#FAF9F6] to-[#7B9AAF]/10 overflow-hidden">
-          {/* 装饰圆点 */}
           <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-[#D4A574]/10" />
           <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-[#7B9AAF]/10" />
           <div className="absolute top-8 left-8 w-16 h-16 rounded-full bg-[#C4908E]/10" />
           <div className="absolute top-4 right-20 w-8 h-8 rounded-full bg-[#9B8EC4]/10" />
           <div className="absolute bottom-12 right-12 w-12 h-12 rounded-full bg-[#7EA685]/10" />
 
-          {/* 标题 */}
           <div className="relative z-10 flex flex-col items-center justify-center h-full text-center px-6">
             <div className="text-[#2D2A26] text-xs tracking-[0.3em] mb-2 font-sans">
               DISCOVER YOURSELF
@@ -89,21 +68,26 @@ export default function SharePage() {
           </div>
         </div>
 
-        {/* 主体内容 */}
         <div className="px-8 pb-8">
           {/* 二维码区域 */}
           <div className="flex justify-center -mt-12 mb-6">
             <div className="bg-white rounded-2xl shadow-md p-4">
-              <canvas ref={qrCanvasRef} width={200} height={200} className="block" />
+              <QRCodeCanvas
+                value={APP_URL}
+                size={200}
+                bgColor="#FAF9F6"
+                fgColor="#2D2A26"
+                level="M"
+                includeMargin={false}
+                className="block"
+              />
             </div>
           </div>
 
-          {/* 扫码提示 */}
           <p className="text-center text-[#2D2A26]/50 text-xs mb-6">
             扫码或长按识别二维码，立即开始测试
           </p>
 
-          {/* 特性介绍 */}
           <div className="space-y-3 mb-6">
             <div className="flex items-center gap-3 p-3 rounded-xl bg-[#FAF9F6]">
               <div className="w-8 h-8 rounded-full bg-[#D4A574]/15 flex items-center justify-center text-sm flex-shrink-0">
@@ -134,7 +118,6 @@ export default function SharePage() {
             </div>
           </div>
 
-          {/* 按钮组 */}
           <div className="space-y-3">
             <Link
               href="/"
@@ -152,7 +135,6 @@ export default function SharePage() {
             </button>
           </div>
 
-          {/* 底部文字 */}
           <p className="text-center text-[#2D2A26]/30 text-xs mt-6">
             适合大一新生 · 舞蹈 · 视觉传达 · 环境设计
           </p>
