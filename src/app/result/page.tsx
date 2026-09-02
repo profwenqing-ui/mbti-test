@@ -1,10 +1,11 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, Suspense, useRef } from 'react';
 import Link from 'next/link';
 import { getMBTIType, type MBTIType } from '@/data/mbti-types';
 import { getRelations, getRelationLevelColor, getRelationLevelLabel } from '@/data/mbti-relations';
+import html2canvas from 'html2canvas';
 
 // 统计数据类型
 interface StatsData {
@@ -60,6 +61,54 @@ function ResultContent() {
   const [showStats, setShowStats] = useState(false);
   const [showRelations, setShowRelations] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const shareCardRef = useRef<HTMLDivElement>(null);
+
+  const handleShare = async () => {
+    if (!shareCardRef.current) return;
+    setCapturing(true);
+    try {
+      // 等一帧让 share card 渲染完成
+      await new Promise((r) => setTimeout(r, 100));
+      const canvas = await html2canvas(shareCardRef.current, {
+        backgroundColor: '#FAF9F6',
+        scale: 2,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+      });
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, 'image/png', 1.0)
+      );
+      if (!blob) return;
+
+      // 尝试用原生分享（手机端）
+      if (navigator.share && navigator.canShare) {
+        const file = new File([blob], `MBTI-${typeCode}.png`, { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: `我是${typeCode}型人格` });
+          return;
+        }
+      }
+
+      // 降级：下载图片
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `MBTI-${typeCode}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // 显示成功提示
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (e) {
+      console.error('截图分享失败', e);
+    } finally {
+      setCapturing(false);
+    }
+  };
 
   const relations = getRelations(typeCode);
 
@@ -120,6 +169,81 @@ function ResultContent() {
           mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
         }`}
       >
+        {/* ===== 分享卡片（截图用，隐藏） ===== */}
+        <div ref={shareCardRef} className={`${capturing ? 'block' : 'hidden'}`}>
+          <div className="w-[375px] bg-[#FAF9F6] p-8 rounded-3xl" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+            {/* 顶部装饰 */}
+            <div className="flex items-center gap-2 mb-6">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: mbtiType.color }} />
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: mbtiType.color + '60' }} />
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: mbtiType.color + '30' }} />
+              <span className="ml-auto text-[10px] text-[#2D2A26]/30 tracking-widest uppercase">16Personality</span>
+            </div>
+
+            {/* 头像 */}
+            <div className="w-24 h-24 mx-auto mb-4 rounded-2xl overflow-hidden shadow-md"
+              style={{ backgroundColor: mbtiType.color + '15' }}
+            >
+              <img src={mbtiType.imageUrl} alt={mbtiType.code} className="w-full h-full object-cover" />
+            </div>
+
+            {/* 类型代码 */}
+            <div className="text-center mb-4">
+              <h2 className="text-5xl font-bold text-[#2D2A26] tracking-tight mb-1">{mbtiType.code}</h2>
+              <p className="text-lg font-medium" style={{ color: mbtiType.color }}>{mbtiType.nickname}</p>
+              <p className="text-sm text-[#2D2A26]/50 mt-1">{mbtiType.title}</p>
+            </div>
+
+            {/* 分隔线 */}
+            <div className="flex items-center gap-3 mb-5">
+              <div className="flex-1 h-px" style={{ backgroundColor: mbtiType.color + '20' }} />
+              <span className="text-xs" style={{ color: mbtiType.color }}>✦ 性格特征 ✦</span>
+              <div className="flex-1 h-px" style={{ backgroundColor: mbtiType.color + '20' }} />
+            </div>
+
+            {/* 描述 */}
+            <p className="text-sm text-[#2D2A26]/70 leading-relaxed mb-5 line-clamp-4">
+              {mbtiType.description}
+            </p>
+
+            {/* 维度倾向 */}
+            <div className="space-y-2 mb-5">
+              {dimensionPercentages.map((dim) => {
+                const config = DIMENSIONS.find((d) => d.key === dim.key)!;
+                const isLeft = dim.dominant === config.key[0];
+                return (
+                  <div key={dim.key} className="flex items-center gap-2 text-xs">
+                    <span className="w-5 text-right font-medium" style={{ color: isLeft ? config.leftColor : '#2D2A26/30' }}>
+                      {config.key[0]}
+                    </span>
+                    <div className="flex-1 h-1.5 bg-[#2D2A26]/5 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{
+                        width: isLeft ? '65%' : '35%',
+                        backgroundColor: config.leftColor,
+                      }} />
+                    </div>
+                    <span className="w-5 font-medium" style={{ color: !isLeft ? config.rightColor : '#2D2A26/30' }}>
+                      {config.key[1]}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 底部 */}
+            <div className="text-center text-[10px] text-[#2D2A26]/30 pt-4 border-t border-[#2D2A26]/5">
+              扫码测试你的MBTI人格类型
+            </div>
+          </div>
+        </div>
+
+        {/* ===== Toast 提示 ===== */}
+        {showToast && (
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-[#2D2A26] text-white px-5 py-3 rounded-full text-sm shadow-lg animate-in fade-in slide-in-from-top-2 duration-300">
+            ✅ 图片已保存
+          </div>
+        )}
+
         {/* ===== 结果头部 ===== */}
         <div className="text-center mb-8 md:mb-12">
           {/* 形象图 - 手机端更小 */}
@@ -456,6 +580,28 @@ function ResultContent() {
 
         {/* ===== 操作按钮 ===== */}
         <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center pb-4 md:pb-0">
+          <button
+            onClick={handleShare}
+            disabled={capturing}
+            className="inline-flex items-center justify-center gap-2 px-5 py-3 md:px-6 md:py-3.5 bg-[#D4A574] text-white rounded-full text-sm md:text-base font-medium hover:bg-[#D4A574]/90 active:scale-[0.97] hover:shadow-lg transition-all duration-200 disabled:opacity-50"
+          >
+            {capturing ? (
+              <>
+                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                生成中...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                一键截图分享
+              </>
+            )}
+          </button>
           <Link
             href="/test"
             className="inline-flex items-center justify-center gap-2 px-5 py-3 md:px-6 md:py-3.5 bg-[#2D2A26] text-white rounded-full text-sm md:text-base font-medium hover:bg-[#2D2A26]/90 active:scale-[0.97] hover:shadow-lg transition-all duration-200"
