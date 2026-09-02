@@ -46,35 +46,33 @@ export default function SharePage() {
     <div className="min-h-screen bg-[#FAF9F6] flex items-center justify-center p-4">
       {/* 宣传卡片 */}
       <div className="w-full max-w-[400px] bg-white rounded-3xl shadow-lg overflow-hidden">
-        {/* 顶部装饰区 */}
-        <div className="relative h-48 bg-gradient-to-br from-[#D4A574]/20 via-[#FAF9F6] to-[#7B9AAF]/10 overflow-hidden">
-          <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-[#D4A574]/10" />
-          <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-[#7B9AAF]/10" />
-          <div className="absolute top-8 left-8 w-16 h-16 rounded-full bg-[#C4908E]/10" />
-          <div className="absolute top-4 right-20 w-8 h-8 rounded-full bg-[#9B8EC4]/10" />
-          <div className="absolute bottom-12 right-12 w-12 h-12 rounded-full bg-[#7EA685]/10" />
+        {/* 顶部装饰区 - 简约设计，不遮挡下方内容 */}
+        <div className="relative h-32 bg-gradient-to-br from-[#D4A574]/15 via-[#FAF9F6] to-[#7B9AAF]/5 overflow-hidden">
+          <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full bg-[#D4A574]/10" />
+          <div className="absolute top-6 left-10 w-12 h-12 rounded-full bg-[#C4908E]/8" />
+          <div className="absolute top-3 right-28 w-5 h-5 rounded-full bg-[#7EA685]/8" />
 
           <div className="relative z-10 flex flex-col items-center justify-center h-full text-center px-6">
-            <div className="text-[#2D2A26] text-xs tracking-[0.3em] mb-2 font-sans">
+            <div className="text-[#2D2A26] text-[10px] tracking-[0.3em] mb-1 font-sans">
               DISCOVER YOURSELF
             </div>
             <h1 className="text-[#2D2A26] text-3xl font-bold tracking-tight">
               MBTI
               <span className="text-[#D4A574]"> 人格测试</span>
             </h1>
-            <p className="text-[#2D2A26]/60 text-sm mt-2 max-w-[280px] leading-relaxed">
+            <p className="text-[#2D2A26]/60 text-xs mt-1">
               30道题，发现真实的自己
             </p>
           </div>
         </div>
 
         <div className="px-8 pb-8">
-          {/* 二维码区域 */}
-          <div className="flex justify-center -mt-12 mb-6">
-            <div className="bg-white rounded-2xl shadow-md p-4">
+          {/* 二维码区域 - 独立卡片，不重叠 */}
+          <div className="flex justify-center mb-6">
+            <div className="bg-white rounded-2xl shadow-md p-5">
               <QRCodeCanvas
                 value={APP_URL}
-                size={200}
+                size={180}
                 bgColor="#FAF9F6"
                 fgColor="#2D2A26"
                 level="M"
