@@ -1,7 +1,6 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
-import { useEffect, useState, Suspense, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { getMBTIType, type MBTIType } from '@/data/mbti-types';
 import { getRelations, getRelationLevelColor, getRelationLevelLabel } from '@/data/mbti-relations';
@@ -11,6 +10,13 @@ import html2canvas from 'html2canvas';
 interface StatsData {
   totalTests: number;
   typeCounts: Record<string, number>;
+}
+
+interface ScoreMap {
+  e: number; i: number;
+  s: number; n: number;
+  t: number; f: number;
+  j: number; p: number;
 }
 
 const STORAGE_KEY = 'mbti_stats';
@@ -40,22 +46,40 @@ const DIMENSIONS = [
   { key: 'JP', label: '生活态度', left: 'J 计划', right: 'P 灵活', leftColor: '#7EA685', rightColor: '#7EA685' },
 ];
 
-function ResultContent() {
-  const searchParams = useSearchParams();
-  const typeCode = searchParams.get('type') || 'INTJ';
-  const scores = {
-    e: Number(searchParams.get('e')) || 0,
-    i: Number(searchParams.get('i')) || 0,
-    s: Number(searchParams.get('s')) || 0,
-    n: Number(searchParams.get('n')) || 0,
-    t: Number(searchParams.get('t')) || 0,
-    f: Number(searchParams.get('f')) || 0,
-    j: Number(searchParams.get('j')) || 0,
-    p: Number(searchParams.get('p')) || 0,
+function parseScoresFromURL(): ScoreMap {
+  if (typeof window === 'undefined') {
+    return { e: 0, i: 0, s: 0, n: 0, t: 0, f: 0, j: 0, p: 0 };
+  }
+  const params = new URLSearchParams(window.location.search);
+  return {
+    e: Number(params.get('e')) || 0,
+    i: Number(params.get('i')) || 0,
+    s: Number(params.get('s')) || 0,
+    n: Number(params.get('n')) || 0,
+    t: Number(params.get('t')) || 0,
+    f: Number(params.get('f')) || 0,
+    j: Number(params.get('j')) || 0,
+    p: Number(params.get('p')) || 0,
   };
+}
+
+function getTypeCodeFromURL(): string {
+  if (typeof window === 'undefined') return 'INTJ';
+  return new URLSearchParams(window.location.search).get('type') || 'INTJ';
+}
+
+function ResultContent() {
+  const [typeCode, setTypeCode] = useState('INTJ');
+  const [scores, setScores] = useState<ScoreMap>({ e: 0, i: 0, s: 0, n: 0, t: 0, f: 0, j: 0, p: 0 });
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setTypeCode(getTypeCodeFromURL());
+    setScores(parseScoresFromURL());
+    setMounted(true);
+  }, []);
 
   const mbtiType = getMBTIType(typeCode);
-  const [mounted, setMounted] = useState(false);
   const [stats, setStats] = useState<StatsData>({ totalTests: 0, typeCounts: {} });
   const [selectedRelation, setSelectedRelation] = useState<string | null>(null);
   const [showStats, setShowStats] = useState(false);
@@ -65,11 +89,17 @@ function ResultContent() {
   const [showToast, setShowToast] = useState(false);
   const shareCardRef = useRef<HTMLDivElement>(null);
 
-  const handleShare = async () => {
+  useEffect(() => {
+    if (mounted && typeCode) {
+      saveResult(typeCode);
+      setStats(getStats());
+    }
+  }, [mounted, typeCode]);
+
+  const handleShare = useCallback(async () => {
     if (!shareCardRef.current) return;
     setCapturing(true);
     try {
-      // 等一帧让 share card 渲染完成
       await new Promise((r) => setTimeout(r, 100));
       const canvas = await html2canvas(shareCardRef.current, {
         backgroundColor: '#FAF9F6',
@@ -83,7 +113,6 @@ function ResultContent() {
       );
       if (!blob) return;
 
-      // 尝试用原生分享（手机端）
       if (navigator.share && navigator.canShare) {
         const file = new File([blob], `MBTI-${typeCode}.png`, { type: 'image/png' });
         if (navigator.canShare({ files: [file] })) {
@@ -92,7 +121,6 @@ function ResultContent() {
         }
       }
 
-      // 降级：下载图片
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -100,7 +128,6 @@ function ResultContent() {
       a.click();
       URL.revokeObjectURL(url);
 
-      // 显示成功提示
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
     } catch (e) {
@@ -108,12 +135,12 @@ function ResultContent() {
     } finally {
       setCapturing(false);
     }
-  };
+  }, [typeCode]);
 
-  const relations = getRelations(typeCode);
+  const relations = useMemo(() => getRelations(typeCode), [typeCode]);
 
   // 计算维度百分比
-  const dimensionPercentages = (() => {
+  const dimensionPercentages = useMemo(() => {
     const eiTotal = scores.e + scores.i;
     const snTotal = scores.s + scores.n;
     const tfTotal = scores.t + scores.f;
@@ -147,489 +174,490 @@ function ResultContent() {
         dominant: typeChar[3],
       },
     ];
-  })();
+  }, [scores, typeCode]);
 
-  useEffect(() => {
-    saveResult(typeCode);
-    setStats(getStats());
-    setMounted(true);
-  }, [typeCode]);
+  const getDimensionColor = (key: string) => {
+    const dim = DIMENSIONS.find((d) => d.key === key);
+    return dim?.leftColor || '#D4A574';
+  };
+
+  // 类型统计排序
+  const sortedTypes = useMemo(
+    () =>
+      Object.entries(stats.typeCounts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 8),
+    [stats]
+  );
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-[#FAF9F6] flex items-center justify-center">
+        <div className="text-[#2D2A26]/50 animate-pulse text-sm">加载中...</div>
+      </div>
+    );
+  }
 
   if (!mbtiType) return null;
 
-  // 类型统计排序
-  const sortedTypes = Object.entries(stats.typeCounts)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 8);
+  const typeColor = mbtiType.color;
+  const dominantTraits = mbtiType.strengths.slice(0, 4);
+
+  // 获取维度倾向文本
+  const getDimensionTendency = (dimKey: string, dominant: string) => {
+    switch (dimKey) {
+      case 'EI': return dominant === 'E' ? '外向 · 从社交中获取能量' : '内向 · 从独处中获取能量';
+      case 'SN': return dominant === 'S' ? '实感 · 关注具体细节' : '直觉 · 关注整体模式';
+      case 'TF': return dominant === 'T' ? '理性 · 以逻辑做决策' : '感性 · 以价值做决策';
+      case 'JP': return dominant === 'J' ? '计划 · 喜欢有序安排' : '灵活 · 喜欢随性而为';
+      default: return '';
+    }
+  };
 
   return (
-    <main className="min-h-screen bg-[#FAF9F6] py-6 md:py-12 px-4 md:px-6">
-      <div
-        className={`max-w-3xl mx-auto transition-all duration-500 ${
-          mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
-        }`}
-      >
-        {/* ===== 分享卡片（截图用，隐藏） ===== */}
-        <div ref={shareCardRef} className={`${capturing ? 'block' : 'hidden'}`}>
+    <>
+      {/* 成功提示 Toast */}
+      {showToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-[#2D2A26] text-white px-6 py-3 rounded-full text-sm shadow-lg animate-fade-in">
+          已保存到相册 ✓
+        </div>
+      )}
+
+      <main className="min-h-screen bg-[#FAF9F6] py-6 md:py-12 px-4 md:px-6">
+        <div className="max-w-3xl mx-auto transition-all duration-500" style={{ opacity: mounted ? 1 : 0, transform: mounted ? 'translateY(0)' : 'translateY(1.5rem)' }}>
+          {/* ===== 顶部人格标识 ===== */}
+          <div className="text-center mb-8 md:mb-12">
+            {/* 形象图 */}
+            <div className="relative mx-auto mb-4 md:mb-6 w-28 h-28 md:w-40 md:h-40">
+              <div
+                className="w-full h-full rounded-2xl md:rounded-3xl overflow-hidden shadow-lg transition-all duration-500"
+                style={{ backgroundColor: `${typeColor}15` }}
+              >
+                {!imgLoaded && (
+                  <div className="w-full h-full flex items-center justify-center animate-pulse bg-[#2D2A26]/5">
+                    <span className="text-[#2D2A26]/20 text-2xl">?</span>
+                  </div>
+                )}
+                <img
+                  src={`/mbti-${typeCode.toLowerCase()}.png`}
+                  alt={typeCode}
+                  className={`w-full h-full object-contain transition-opacity duration-500 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
+                  onLoad={() => setImgLoaded(true)}
+                  onError={() => setImgLoaded(true)}
+                />
+              </div>
+              {/* 类型角标 */}
+              <div
+                className="absolute -top-1 -right-1 md:-top-2 md:-right-2 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center text-white text-xs md:text-sm font-bold shadow-md"
+                style={{ backgroundColor: typeColor }}
+              >
+                {typeCode}
+              </div>
+            </div>
+
+            {/* 标题 */}
+            <h1 className="text-3xl md:text-5xl font-bold text-[#2D2A26] tracking-tight mb-2">
+              {typeCode}
+            </h1>
+            <p className="text-lg md:text-xl font-medium" style={{ color: typeColor }}>
+              {mbtiType.nickname}
+            </p>
+            {mbtiType.altNickname && (
+              <p className="text-sm md:text-base text-[#2D2A26]/40 mt-1">
+                又称「{mbtiType.altNickname}」
+              </p>
+            )}
+            <p className="text-sm md:text-base text-[#2D2A26]/50 mt-2 max-w-md mx-auto leading-relaxed">
+              {mbtiType.title}
+            </p>
+          </div>
+
+          {/* ===== 性格描述 ===== */}
+          <section className="mb-6 md:mb-8">
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 shadow-sm border border-[#2D2A26]/5">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="w-1 h-4 md:h-5 rounded-full bg-[#D4A574]" />
+                <h2 className="text-base md:text-lg font-semibold text-[#2D2A26]">性格特征</h2>
+              </div>
+              <p className="text-sm md:text-base text-[#2D2A26]/70 leading-relaxed whitespace-pre-line">
+                {mbtiType.description}
+              </p>
+            </div>
+          </section>
+
+          {/* ===== 维度倾向分析 ===== */}
+          <section className="mb-6 md:mb-8">
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 shadow-sm border border-[#2D2A26]/5">
+              <div className="flex items-center gap-3 mb-5">
+                <span className="w-1 h-4 md:h-5 rounded-full bg-[#D4A574]" />
+                <h2 className="text-base md:text-lg font-semibold text-[#2D2A26]">维度倾向分析</h2>
+              </div>
+              <div className="space-y-4 md:space-y-5">
+                {dimensionPercentages.map((dim) => {
+                  const dimColor = getDimensionColor(dim.key);
+                  const dimConfig = DIMENSIONS.find((d) => d.key === dim.key)!;
+                  return (
+                    <div key={dim.key}>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs md:text-sm font-medium text-[#2D2A26]/60">{dimConfig.label}</span>
+                        <span className="text-xs text-[#2D2A26]/40">{dim.leftPercent}% - {dim.rightPercent}%</span>
+                      </div>
+                      <div className="relative h-6 md:h-7 bg-[#2D2A26]/5 rounded-full overflow-hidden">
+                        <div
+                          className="absolute inset-y-0 left-0 rounded-full transition-all duration-700"
+                          style={{ width: `${dim.leftPercent}%`, backgroundColor: dim.dominant === dimConfig.left[0] ? dimColor : `${dimColor}40` }}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-between px-3 text-xs font-medium">
+                          <span style={{ color: dim.leftPercent > 50 ? '#fff' : dimColor }}>{dimConfig.left}</span>
+                          <span style={{ color: dim.rightPercent > 50 ? '#fff' : dimColor }}>{dimConfig.right}</span>
+                        </div>
+                      </div>
+                      <p className="text-xs md:text-sm text-[#2D2A26]/50 mt-1">
+                        {getDimensionTendency(dim.key, dim.dominant)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
+          {/* ===== 优势与成长 ===== */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
+            <section>
+              <div className="bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 shadow-sm border border-[#2D2A26]/5 h-full">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-lg">✨</span>
+                  <h2 className="text-base md:text-lg font-semibold text-[#2D2A26]">优势</h2>
+                </div>
+                <ul className="space-y-2">
+                  {mbtiType.strengths.map((s, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm md:text-base text-[#2D2A26]/70">
+                      <span className="mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: typeColor }} />
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+            <section>
+              <div className="bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 shadow-sm border border-[#2D2A26]/5 h-full">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-lg">🌱</span>
+                  <h2 className="text-base md:text-lg font-semibold text-[#2D2A26]">成长方向</h2>
+                </div>
+                <ul className="space-y-2">
+                  {mbtiType.weaknesses.map((g, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm md:text-base text-[#2D2A26]/70">
+                      <span className="mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: typeColor }} />
+                      {g}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+          </div>
+
+          {/* ===== 适合职业 ===== */}
+          <section className="mb-6 md:mb-8">
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 shadow-sm border border-[#2D2A26]/5">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-lg">💼</span>
+                <h2 className="text-base md:text-lg font-semibold text-[#2D2A26]">适合职业</h2>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {mbtiType.careers.map((c, i) => (
+                  <span
+                    key={i}
+                    className="px-3 py-1.5 rounded-full text-xs md:text-sm font-medium"
+                    style={{ backgroundColor: `${typeColor}15`, color: typeColor }}
+                  >
+                    {c}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* ===== 代表人物 ===== */}
+          <section className="mb-6 md:mb-8">
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 shadow-sm border border-[#2D2A26]/5">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-lg">👤</span>
+                <h2 className="text-base md:text-lg font-semibold text-[#2D2A26]">代表人物</h2>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {mbtiType.famousPeople.map((f, i) => (
+                  <span
+                    key={i}
+                    className="px-3 py-1.5 rounded-full text-xs md:text-sm bg-[#2D2A26]/5 text-[#2D2A26]/70"
+                  >
+                    {f}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* ===== 人格关系图谱 ===== */}
+          <section className="mb-6 md:mb-8">
+            <button
+              onClick={() => setShowRelations(!showRelations)}
+              className="w-full bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 shadow-sm border border-[#2D2A26]/5 text-left transition-all duration-200 hover:shadow-md"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-lg">🔮</span>
+                  <h2 className="text-base md:text-lg font-semibold text-[#2D2A26]">人格关系图谱</h2>
+                </div>
+                <svg
+                  className={`w-5 h-5 text-[#2D2A26]/40 transition-transform duration-300 ${showRelations ? 'rotate-180' : ''}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+              <p className="text-xs md:text-sm text-[#2D2A26]/40 mt-2">点击展开 · 探索你的类型与其他类型的关系</p>
+            </button>
+            {showRelations && (
+              <div className="mt-2 bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 shadow-sm border border-[#2D2A26]/5 animate-fade-in">
+                {/* 图例 */}
+                <div className="flex flex-wrap gap-3 md:gap-4 mb-5 pb-4 border-b border-[#2D2A26]/5">
+                  {[
+                    { level: 'perfect', label: '灵魂伴侣', color: '#C4908E' },
+                    { level: 'good', label: '知己搭档', color: '#7B9AAF' },
+                    { level: 'balanced', label: '互补成长', color: '#7EA685' },
+                    { level: 'challenge', label: '挑战启发', color: '#9B8EC4' },
+                  ].map((item) => (
+                    <div key={item.level} className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-xs text-[#2D2A26]/50">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {relations.map((rel) => {
+                    const relType = getMBTIType(rel.type);
+                    const levelColor = getRelationLevelColor(rel.level);
+                    const levelLabel = getRelationLevelLabel(rel.level);
+                    const isSelected = selectedRelation === rel.type;
+                    return (
+                      <div key={rel.type}>
+                        <button
+                          onClick={() => setSelectedRelation(isSelected ? null : rel.type)}
+                          className="w-full text-left p-3.5 md:p-4 rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-[0.98]"
+                          style={{
+                            borderColor: isSelected ? levelColor : `${levelColor}30`,
+                            backgroundColor: isSelected ? `${levelColor}08` : 'transparent',
+                          }}
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-sm md:text-base text-[#2D2A26]">{rel.type}</span>
+                              <span className="text-xs text-[#2D2A26]/50">{relType?.nickname || ''}</span>
+                            </div>
+                            <span
+                              className="text-[10px] md:text-xs px-2 py-0.5 rounded-full font-medium"
+                              style={{ backgroundColor: `${levelColor}20`, color: levelColor }}
+                            >
+                              {levelLabel}
+                            </span>
+                          </div>
+                          {isSelected && rel.desc && (
+                            <p className="text-xs md:text-sm text-[#2D2A26]/60 mt-2 leading-relaxed border-t border-[#2D2A26]/5 pt-2">
+                              {rel.desc}
+                            </p>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* ===== 测试数据统计 ===== */}
+          <section className="mb-6 md:mb-8">
+            <button
+              onClick={() => setShowStats(!showStats)}
+              className="w-full bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 shadow-sm border border-[#2D2A26]/5 text-left transition-all duration-200 hover:shadow-md"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-lg">📊</span>
+                  <h2 className="text-base md:text-lg font-semibold text-[#2D2A26]">测试数据统计</h2>
+                </div>
+                <svg
+                  className={`w-5 h-5 text-[#2D2A26]/40 transition-transform duration-300 ${showStats ? 'rotate-180' : ''}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+              <p className="text-xs md:text-sm text-[#2D2A26]/40 mt-2">点击展开 · 查看累计测试数据</p>
+            </button>
+            {showStats && (
+              <div className="mt-2 bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 shadow-sm border border-[#2D2A26]/5 animate-fade-in">
+                <div className="text-center mb-5">
+                  <span className="text-2xl md:text-3xl font-bold text-[#2D2A26]">{stats.totalTests}</span>
+                  <span className="text-sm md:text-base text-[#2D2A26]/50 ml-2">人次已完成测试</span>
+                </div>
+                {sortedTypes.length > 0 ? (
+                  <div className="space-y-3">
+                    {sortedTypes.map(([type, count], idx) => {
+                      const pct = stats.totalTests > 0 ? Math.round((count / stats.totalTests) * 100) : 0;
+                      const t = getMBTIType(type);
+                      const isActive = type === typeCode;
+                      return (
+                        <div key={type} className="flex items-center gap-3">
+                          <span className="w-5 text-xs text-[#2D2A26]/40 text-right flex-shrink-0">{idx + 1}</span>
+                          <div className="flex items-center gap-2 w-16 md:w-20 flex-shrink-0">
+                            <span
+                              className={`text-xs md:text-sm font-bold ${isActive ? 'text-[#2D2A26]' : 'text-[#2D2A26]/60'}`}
+                              style={isActive ? { color: typeColor } : {}}
+                            >
+                              {type}
+                            </span>
+                            <span className="text-[10px] md:text-xs text-[#2D2A26]/40 truncate">{t?.nickname || ''}</span>
+                          </div>
+                          <div className="flex-1 h-4 md:h-5 bg-[#2D2A26]/5 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-700"
+                              style={{ width: `${pct}%`, backgroundColor: isActive ? typeColor : '#D4A57460' }}
+                            />
+                          </div>
+                          <span className="w-10 text-right text-xs md:text-sm text-[#2D2A26]/50 flex-shrink-0">{pct}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-center text-sm text-[#2D2A26]/40">暂无数据，快来第一个测试吧！</p>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* ===== 操作按钮 ===== */}
+          <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center pb-4 md:pb-0">
+            <button
+              onClick={handleShare}
+              disabled={capturing}
+              className="inline-flex items-center justify-center gap-2 px-5 py-3 md:px-6 md:py-3.5 bg-[#D4A574] text-white rounded-full text-sm md:text-base font-medium hover:bg-[#D4A574]/90 active:scale-[0.97] hover:shadow-lg transition-all duration-200 disabled:opacity-50"
+            >
+              {capturing ? (
+                <>
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  生成中...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  一键截图分享
+                </>
+              )}
+            </button>
+            <Link
+              href="/test"
+              className="inline-flex items-center justify-center gap-2 px-5 py-3 md:px-6 md:py-3.5 bg-[#2D2A26] text-white rounded-full text-sm md:text-base font-medium hover:bg-[#2D2A26]/90 active:scale-[0.97] hover:shadow-lg transition-all duration-200"
+            >
+              重新测试
+            </Link>
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center gap-2 px-5 py-3 md:px-6 md:py-3.5 bg-white/60 text-[#2D2A26] rounded-full text-sm md:text-base font-medium border border-[#2D2A26]/10 hover:bg-white active:scale-[0.97] hover:shadow-md transition-all duration-200"
+            >
+              返回首页
+            </Link>
+          </div>
+        </div>
+
+        {/* ===== 隐藏的分享卡片 (用于截图) ===== */}
+        <div ref={shareCardRef} className="fixed -left-[9999px] top-0">
           <div className="w-[375px] bg-[#FAF9F6] p-8 rounded-3xl" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-            {/* 顶部装饰 */}
+            {/* 装饰 */}
             <div className="flex items-center gap-2 mb-6">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: mbtiType.color }} />
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: mbtiType.color + '60' }} />
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: mbtiType.color + '30' }} />
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: typeColor }} />
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: `${typeColor}60` }} />
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: `${typeColor}30` }} />
               <span className="ml-auto text-[10px] text-[#2D2A26]/30 tracking-widest uppercase">16Personality</span>
             </div>
 
             {/* 头像 */}
-            <div className="w-24 h-24 mx-auto mb-4 rounded-2xl overflow-hidden shadow-md"
-              style={{ backgroundColor: mbtiType.color + '15' }}
-            >
-              <img src={mbtiType.imageUrl} alt={mbtiType.code} className="w-full h-full object-cover" />
+            <div className="w-24 h-24 mx-auto mb-4 rounded-2xl overflow-hidden shadow-md" style={{ backgroundColor: `${typeColor}15` }}>
+              <img
+                src={`/mbti-${typeCode.toLowerCase()}.png`}
+                alt={typeCode}
+                className="w-full h-full object-contain"
+              />
             </div>
 
-            {/* 类型代码 */}
+            {/* 类型 */}
             <div className="text-center mb-4">
-              <h2 className="text-5xl font-bold text-[#2D2A26] tracking-tight mb-1">{mbtiType.code}</h2>
-              <p className="text-lg font-medium" style={{ color: mbtiType.color }}>{mbtiType.nickname}</p>
-              <p className="text-sm text-[#2D2A26]/50 mt-1">{mbtiType.title}</p>
+              <h2 className="text-5xl font-bold text-[#2D2A26] tracking-tight mb-1">{typeCode}</h2>
+              <p className="text-lg font-medium" style={{ color: typeColor }}>{mbtiType.nickname}</p>
+              {mbtiType.altNickname && (
+                <p className="text-sm text-[#2D2A26]/40 mt-1">又称「{mbtiType.altNickname}」</p>
+              )}
+              <p className="text-sm text-[#2D2A26]/50 mt-2 leading-relaxed px-4">{mbtiType.title}</p>
             </div>
 
             {/* 分隔线 */}
-            <div className="flex items-center gap-3 mb-5">
-              <div className="flex-1 h-px" style={{ backgroundColor: mbtiType.color + '20' }} />
-              <span className="text-xs" style={{ color: mbtiType.color }}>✦ 性格特征 ✦</span>
-              <div className="flex-1 h-px" style={{ backgroundColor: mbtiType.color + '20' }} />
+            <div className="border-t border-[#2D2A26]/10 my-4" />
+
+            {/* 特征摘要 */}
+            <div className="mb-4">
+              <p className="text-xs text-[#2D2A26]/60 font-medium mb-2">性格特征</p>
+              <div className="flex flex-wrap gap-1.5">
+                {dominantTraits.map((trait, i) => (
+                  <span
+                    key={i}
+                    className="px-2.5 py-1 rounded-full text-xs font-medium"
+                    style={{ backgroundColor: `${typeColor}12`, color: typeColor }}
+                  >
+                    {trait}
+                  </span>
+                ))}
+              </div>
             </div>
 
-            {/* 描述 */}
-            <p className="text-sm text-[#2D2A26]/70 leading-relaxed mb-5 line-clamp-4">
-              {mbtiType.description}
-            </p>
-
-            {/* 维度倾向 */}
-            <div className="space-y-2 mb-5">
+            {/* 维度倾向简表 */}
+            <div className="space-y-2.5 mb-4">
               {dimensionPercentages.map((dim) => {
-                const config = DIMENSIONS.find((d) => d.key === dim.key)!;
-                const isLeft = dim.dominant === config.key[0];
+                const dimConfig = DIMENSIONS.find((d) => d.key === dim.key)!;
                 return (
-                  <div key={dim.key} className="flex items-center gap-2 text-xs">
-                    <span className="w-5 text-right font-medium" style={{ color: isLeft ? config.leftColor : '#2D2A26/30' }}>
-                      {config.key[0]}
-                    </span>
-                    <div className="flex-1 h-1.5 bg-[#2D2A26]/5 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{
-                        width: isLeft ? '65%' : '35%',
-                        backgroundColor: config.leftColor,
-                      }} />
+                  <div key={dim.key}>
+                    <div className="flex justify-between text-[10px] text-[#2D2A26]/40 mb-1">
+                      <span>{dimConfig.label}</span>
                     </div>
-                    <span className="w-5 font-medium" style={{ color: !isLeft ? config.rightColor : '#2D2A26/30' }}>
-                      {config.key[1]}
-                    </span>
+                    <div className="h-2 bg-[#2D2A26]/8 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${dim.leftPercent}%`, backgroundColor: typeColor }}
+                      />
+                    </div>
                   </div>
                 );
               })}
             </div>
 
             {/* 底部 */}
-            <div className="text-center text-[10px] text-[#2D2A26]/30 pt-4 border-t border-[#2D2A26]/5">
-              扫码测试你的MBTI人格类型
+            <div className="text-center text-[10px] text-[#2D2A26]/25 pt-4 border-t border-[#2D2A26]/8">
+              扫码测试 · 发现你的性格类型
             </div>
           </div>
         </div>
-
-        {/* ===== Toast 提示 ===== */}
-        {showToast && (
-          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-[#2D2A26] text-white px-5 py-3 rounded-full text-sm shadow-lg animate-in fade-in slide-in-from-top-2 duration-300">
-            ✅ 图片已保存
-          </div>
-        )}
-
-        {/* ===== 结果头部 ===== */}
-        <div className="text-center mb-8 md:mb-12">
-          {/* 形象图 - 手机端更小 */}
-          <div className="relative w-28 h-28 md:w-40 md:h-40 mx-auto mb-4 md:mb-6 rounded-2xl overflow-hidden shadow-lg"
-            style={{ backgroundColor: mbtiType.color + '15' }}
-          >
-            <img
-              src={mbtiType.imageUrl}
-              alt={mbtiType.code}
-              className={`w-full h-full object-cover transition-opacity duration-300 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
-              loading="eager"
-              onLoad={() => setImgLoaded(true)}
-              sizes="(max-width: 768px) 112px, 160px"
-            />
-            {!imgLoaded && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-3xl md:text-4xl">{mbtiType.emoji}</span>
-              </div>
-            )}
-            <div
-              className="absolute top-2 right-2 w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center backdrop-blur-sm"
-              style={{ backgroundColor: mbtiType.color + '60' }}
-            >
-              <span className="text-sm md:text-lg">{mbtiType.emoji}</span>
-            </div>
-          </div>
-          <h1 className="text-4xl md:text-6xl font-bold text-[#2D2A26] mb-1 md:mb-2 tracking-tight">
-            {mbtiType.code}
-          </h1>
-          <p
-            className="text-lg md:text-xl font-medium mb-1"
-            style={{ color: mbtiType.color }}
-          >
-            {mbtiType.nickname}
-          </p>
-          <p className="text-xs md:text-sm text-[#2D2A26]/40 mb-2 md:mb-3">
-            又称「{mbtiType.altNickname}」
-          </p>
-          <p className="text-sm md:text-lg text-[#2D2A26]/60 px-2">{mbtiType.title}</p>
-        </div>
-
-        {/* ===== 维度得分可视化 ===== */}
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 mb-5 md:mb-8 border border-[#2D2A26]/5">
-          <h2 className="text-base md:text-lg font-semibold text-[#2D2A26] mb-4 md:mb-6 flex items-center gap-2">
-            <span className="w-1 h-4 md:h-5 rounded-full bg-[#D4A574]" />
-            维度倾向分析
-          </h2>
-          <div className="space-y-3 md:space-y-5">
-            {dimensionPercentages.map((dim) => {
-              const config = DIMENSIONS.find((d) => d.key === dim.key)!;
-              const isLeftDominant = dim.dominant === config.key[0];
-              const leftPct = isLeftDominant ? Math.max(dim.leftPercent, 52) : Math.min(dim.leftPercent, 48);
-              const rightPct = isLeftDominant ? Math.min(dim.rightPercent, 48) : Math.max(dim.rightPercent, 52);
-
-              return (
-                <div key={dim.key}>
-                  <div className="flex justify-between text-xs text-[#2D2A26]/50 mb-1">
-                    <span style={{ color: config.leftColor }}>{config.left}</span>
-                    <span style={{ color: config.rightColor }}>{config.right}</span>
-                  </div>
-                  <div className="relative h-6 md:h-8 bg-[#2D2A26]/5 rounded-full overflow-hidden">
-                    <div
-                      className="absolute left-0 top-0 h-full rounded-l-full transition-all duration-700 ease-out"
-                      style={{
-                        width: `${leftPct}%`,
-                        backgroundColor: config.leftColor + '40',
-                      }}
-                    />
-                    <div
-                      className="absolute right-0 top-0 h-full rounded-r-full transition-all duration-700 ease-out"
-                      style={{
-                        width: `${rightPct}%`,
-                        backgroundColor: config.rightColor + '40',
-                      }}
-                    />
-                    <div
-                      className="absolute top-0 h-full w-0.5 md:w-1 rounded-full transition-all duration-700 ease-out"
-                      style={{
-                        left: `${leftPct}%`,
-                        backgroundColor: isLeftDominant ? config.leftColor : config.rightColor,
-                        boxShadow: '0 0 4px rgba(0,0,0,0.1)',
-                      }}
-                    />
-                    <div className="absolute inset-0 flex items-center justify-between px-3 md:px-4 text-xs md:text-sm font-medium">
-                      <span style={{ color: config.leftColor, opacity: leftPct > 30 ? 1 : 0.5 }}>
-                        {isLeftDominant ? `${leftPct}%` : ''}
-                      </span>
-                      <span className="text-[#2D2A26] text-xs font-bold">{dim.dominant}</span>
-                      <span style={{ color: config.rightColor, opacity: rightPct > 30 ? 1 : 0.5 }}>
-                        {!isLeftDominant ? `${rightPct}%` : ''}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ===== 性格特征 ===== */}
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 mb-5 md:mb-8 border border-[#2D2A26]/5">
-          <h2 className="text-base md:text-lg font-semibold text-[#2D2A26] mb-3 md:mb-4 flex items-center gap-2">
-            <span className="w-1 h-4 md:h-5 rounded-full" style={{ backgroundColor: mbtiType.color }} />
-            性格特征
-          </h2>
-          <p className="text-sm md:text-lg text-[#2D2A26]/70 leading-relaxed">
-            {mbtiType.description}
-          </p>
-        </div>
-
-        {/* ===== 优势与成长 ===== */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-5 md:mb-8">
-          <div className="bg-white/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-6 border border-[#2D2A26]/5">
-            <h3 className="text-sm md:text-base font-semibold text-[#2D2A26] mb-3 md:mb-4 flex items-center gap-2">
-              <span className="text-base md:text-lg">💪</span>
-              你的优势
-            </h3>
-            <ul className="space-y-1.5 md:space-y-2">
-              {mbtiType.strengths.map((s, i) => (
-                <li key={i} className="flex items-center gap-2 text-sm md:text-base text-[#2D2A26]/70">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: mbtiType.color }} />
-                  {s}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="bg-white/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-6 border border-[#2D2A26]/5">
-            <h3 className="text-sm md:text-base font-semibold text-[#2D2A26] mb-3 md:mb-4 flex items-center gap-2">
-              <span className="text-base md:text-lg">🌱</span>
-              成长方向
-            </h3>
-            <ul className="space-y-1.5 md:space-y-2">
-              {mbtiType.weaknesses.map((w, i) => (
-                <li key={i} className="flex items-center gap-2 text-sm md:text-base text-[#2D2A26]/70">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-[#2D2A26]/20" />
-                  {w}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* ===== 适合的职业 ===== */}
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 mb-5 md:mb-8 border border-[#2D2A26]/5">
-          <h2 className="text-base md:text-lg font-semibold text-[#2D2A26] mb-3 md:mb-4 flex items-center gap-2">
-            <span className="w-1 h-4 md:h-5 rounded-full" style={{ backgroundColor: mbtiType.color }} />
-            适合的职业方向
-          </h2>
-          <div className="flex flex-wrap gap-2 md:gap-3">
-            {mbtiType.careers.map((career, i) => (
-              <span
-                key={i}
-                className="px-3 py-1.5 md:px-4 md:py-2 rounded-full text-xs md:text-sm border"
-                style={{
-                  borderColor: mbtiType.color + '30',
-                  color: mbtiType.color,
-                  backgroundColor: mbtiType.color + '08',
-                }}
-              >
-                {career}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* ===== 代表人物 ===== */}
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 mb-5 md:mb-8 border border-[#2D2A26]/5">
-          <h2 className="text-base md:text-lg font-semibold text-[#2D2A26] mb-3 md:mb-4 flex items-center gap-2">
-            <span className="w-1 h-4 md:h-5 rounded-full" style={{ backgroundColor: mbtiType.color }} />
-            同类型的知名人物
-          </h2>
-          <div className="flex flex-wrap gap-2 md:gap-3">
-            {mbtiType.famousPeople.map((person, i) => (
-              <span key={i} className="px-3 py-1.5 md:px-4 md:py-2 rounded-full text-xs md:text-sm bg-[#2D2A26]/5 text-[#2D2A26]/70">
-                {person}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* ===== 趣味交互：人格关系图谱 ===== */}
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 mb-5 md:mb-8 border border-[#2D2A26]/5">
-          <button
-            onClick={() => setShowRelations(!showRelations)}
-            className="w-full flex items-center justify-between text-left"
-          >
-            <h2 className="text-base md:text-lg font-semibold text-[#2D2A26] flex items-center gap-2">
-              <span className="w-1 h-4 md:h-5 rounded-full bg-[#D4A574]" />
-              人格关系图谱
-            </h2>
-            <span className={`text-[#2D2A26]/30 transition-transform duration-300 ${showRelations ? 'rotate-180' : ''}`}>
-              <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </span>
-          </button>
-
-          {showRelations && (
-            <div className="mt-4 md:mt-6 space-y-3 md:space-y-4 animate-in fade-in duration-300">
-              <p className="text-xs md:text-sm text-[#2D2A26]/50 mb-3 md:mb-4">
-                看看你的性格类型与其他类型有哪些奇妙关系？
-              </p>
-
-              <div className="flex flex-wrap gap-2 md:gap-4 mb-4 md:mb-6 text-xs">
-                {[
-                  { level: 'perfect', label: '灵魂伴侣' },
-                  { level: 'good', label: '知己搭档' },
-                  { level: 'balanced', label: '互补成长' },
-                  { level: 'challenge', label: '挑战启发' },
-                ].map((item) => (
-                  <div key={item.level} className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ backgroundColor: getRelationLevelColor(item.level) }} />
-                    <span className="text-[#2D2A26]/60 text-xs">{item.label}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
-                {relations.map((rel) => {
-                  const isSelected = selectedRelation === rel.type;
-                  const relType = getMBTIType(rel.type);
-                  return (
-                    <div
-                      key={rel.type}
-                      onClick={() => setSelectedRelation(isSelected ? null : rel.type)}
-                      className="p-3 md:p-4 rounded-xl md:rounded-2xl border cursor-pointer transition-all duration-200 active:scale-[0.98]"
-                      style={{
-                        borderColor: isSelected
-                          ? getRelationLevelColor(rel.level)
-                          : '#2D2A26' + '10',
-                        backgroundColor: isSelected
-                          ? getRelationLevelColor(rel.level) + '08'
-                          : 'transparent',
-                      }}
-                    >
-                      <div className="flex items-center gap-2 md:gap-3 mb-1">
-                        <span className="text-xl md:text-2xl">{relType.emoji}</span>
-                        <div className="min-w-0">
-                          <div className="text-sm md:text-base font-semibold text-[#2D2A26] truncate">
-                            {rel.type} {relType.nickname}
-                          </div>
-                          <span
-                            className="text-xs font-medium"
-                            style={{ color: getRelationLevelColor(rel.level) }}
-                          >
-                            {rel.label}
-                          </span>
-                        </div>
-                        <span
-                          className="ml-auto w-2 h-2 rounded-full shrink-0"
-                          style={{ backgroundColor: getRelationLevelColor(rel.level) }}
-                        />
-                      </div>
-                      {isSelected && (
-                        <p className="text-xs md:text-sm text-[#2D2A26]/60 mt-2 pl-9 md:pl-11 animate-in fade-in duration-200">
-                          {rel.desc}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ===== 数据统计 ===== */}
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-5 md:p-8 mb-5 md:mb-8 border border-[#2D2A26]/5">
-          <button
-            onClick={() => setShowStats(!showStats)}
-            className="w-full flex items-center justify-between text-left"
-          >
-            <h2 className="text-base md:text-lg font-semibold text-[#2D2A26] flex items-center gap-2">
-              <span className="w-1 h-4 md:h-5 rounded-full bg-[#D4A574]" />
-              📊 测试数据统计
-            </h2>
-            <span className={`text-[#2D2A26]/30 transition-transform duration-300 ${showStats ? 'rotate-180' : ''}`}>
-              <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </span>
-          </button>
-
-          {showStats && (
-            <div className="mt-4 md:mt-6 animate-in fade-in duration-300">
-              <div className="text-center mb-4 md:mb-6">
-                <div className="text-2xl md:text-3xl font-bold text-[#2D2A26]">{stats.totalTests}</div>
-                <div className="text-xs md:text-sm text-[#2D2A26]/50">累计测试人数</div>
-              </div>
-
-              {sortedTypes.length > 0 && (
-                <div className="space-y-2 md:space-y-3">
-                  {sortedTypes.map(([type, count]) => {
-                    const t = getMBTIType(type);
-                    const pct = stats.totalTests > 0
-                      ? Math.round((count / stats.totalTests) * 100)
-                      : 0;
-                    return (
-                      <div key={type} className="flex items-center gap-2 md:gap-3">
-                        <span className="text-sm md:text-base w-6 md:w-8 text-center">{t.emoji}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between text-xs mb-0.5 md:mb-1">
-                            <span className="text-[#2D2A26] font-medium text-xs md:text-sm">{type}</span>
-                            <span className="text-[#2D2A26]/50 text-xs">{count}人 ({pct}%)</span>
-                          </div>
-                          <div className="h-1.5 md:h-2 bg-[#2D2A26]/5 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all duration-700"
-                              style={{
-                                width: `${pct}%`,
-                                backgroundColor: t.color,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {sortedTypes.length === 0 && (
-                <p className="text-center text-xs md:text-sm text-[#2D2A26]/40">
-                  还没有统计数据，快来成为第一个测试者吧！
-                </p>
-              )}
-
-              <p className="mt-3 md:mt-4 text-xs text-[#2D2A26]/30 text-center">
-                * 数据仅保存在本地浏览器中
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* ===== 操作按钮 ===== */}
-        <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center pb-4 md:pb-0">
-          <button
-            onClick={handleShare}
-            disabled={capturing}
-            className="inline-flex items-center justify-center gap-2 px-5 py-3 md:px-6 md:py-3.5 bg-[#D4A574] text-white rounded-full text-sm md:text-base font-medium hover:bg-[#D4A574]/90 active:scale-[0.97] hover:shadow-lg transition-all duration-200 disabled:opacity-50"
-          >
-            {capturing ? (
-              <>
-                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                生成中...
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                一键截图分享
-              </>
-            )}
-          </button>
-          <Link
-            href="/test"
-            className="inline-flex items-center justify-center gap-2 px-5 py-3 md:px-6 md:py-3.5 bg-[#2D2A26] text-white rounded-full text-sm md:text-base font-medium hover:bg-[#2D2A26]/90 active:scale-[0.97] hover:shadow-lg transition-all duration-200"
-          >
-            重新测试
-          </Link>
-          <Link
-            href="/"
-            className="inline-flex items-center justify-center gap-2 px-5 py-3 md:px-6 md:py-3.5 bg-white/60 text-[#2D2A26] rounded-full text-sm md:text-base font-medium border border-[#2D2A26]/10 hover:bg-white active:scale-[0.97] hover:shadow-md transition-all duration-200"
-          >
-            返回首页
-          </Link>
-        </div>
-      </div>
-    </main>
+      </main>
+    </>
   );
 }
 
 export default function ResultPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-[#FAF9F6] flex items-center justify-center">
-          <div className="text-[#2D2A26]/50 animate-pulse text-sm">加载中...</div>
-        </div>
-      }
-    >
-      <ResultContent />
-    </Suspense>
-  );
+  return <ResultContent />;
 }
