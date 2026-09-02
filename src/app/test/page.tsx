@@ -76,20 +76,20 @@ export default function TestPage() {
     <main className="min-h-screen bg-[#FAF9F6] flex flex-col">
       {/* 顶部进度条 */}
       <div className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-[#2D2A26]/5">
-        <div className="max-w-2xl mx-auto px-6 py-4">
+        <div className="max-w-2xl mx-auto px-4 md:px-6 py-3 md:py-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-[#2D2A26]/50">
+            <span className="text-xs md:text-sm text-[#2D2A26]/50">
               {currentIndex + 1} / {questions.length}
             </span>
             <button
               onClick={handleBack}
               disabled={currentIndex === 0}
-              className="text-sm text-[#2D2A26]/50 hover:text-[#2D2A26] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="text-xs md:text-sm text-[#2D2A26]/50 hover:text-[#2D2A26] disabled:opacity-30 disabled:cursor-not-allowed transition-colors active:text-[#2D2A26]"
             >
               ← 上一题
             </button>
           </div>
-          <div className="h-1.5 bg-[#2D2A26]/5 rounded-full overflow-hidden">
+          <div className="h-1 md:h-1.5 bg-[#2D2A26]/5 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-[#D4A574] to-[#9B8EC4] rounded-full transition-all duration-500 ease-out"
               style={{ width: `${progress}%` }}
@@ -99,16 +99,16 @@ export default function TestPage() {
       </div>
 
       {/* 题目内容 */}
-      <div className="flex-1 flex items-center justify-center p-6 pt-28 pb-12">
+      <div className="flex-1 flex items-center justify-center px-4 md:p-6 pt-24 md:pt-28 pb-10 md:pb-12">
         <div
           className={`max-w-xl w-full transition-all duration-300 ${
             mounted ? 'opacity-100' : 'opacity-0'
           } ${animating ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'}`}
         >
           {/* 维度标签 */}
-          <div className="mb-4">
+          <div className="mb-3 md:mb-4">
             <span
-              className="inline-block px-3 py-1 rounded-full text-xs font-medium"
+              className="inline-block px-2.5 py-0.5 md:px-3 md:py-1 rounded-full text-[10px] md:text-xs font-medium"
               style={{
                 backgroundColor: getDimensionColor(currentQuestion.dimension) + '20',
                 color: getDimensionColor(currentQuestion.dimension),
@@ -119,27 +119,27 @@ export default function TestPage() {
           </div>
 
           {/* 题目 */}
-          <h2 className="text-2xl md:text-3xl font-bold text-[#2D2A26] mb-8 leading-relaxed">
+          <h2 className="text-xl md:text-3xl font-bold text-[#2D2A26] mb-6 md:mb-8 leading-relaxed">
             {currentQuestion.text}
           </h2>
 
           {/* 选项 */}
-          <div className="space-y-4">
+          <div className="space-y-3 md:space-y-4">
             {currentQuestion.options.map((option, index) => {
               const isSelected = answers[currentQuestion.id] === option.value;
               return (
                 <button
                   key={index}
                   onClick={() => handleSelect(option.value)}
-                  className={`w-full text-left p-5 rounded-2xl border-2 transition-all duration-300 hover:-translate-y-0.5 ${
+                  className={`w-full text-left p-3.5 md:p-5 rounded-xl md:rounded-2xl border-2 transition-all duration-300 active:scale-[0.98] ${
                     isSelected
                       ? 'border-[#D4A574] bg-[#D4A574]/5 shadow-md'
                       : 'border-[#2D2A26]/10 bg-white/60 hover:border-[#D4A574]/50 hover:shadow-md'
                   }`}
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3 md:gap-4">
                     <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
+                      className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs md:text-sm font-medium shrink-0 transition-all ${
                         isSelected
                           ? 'bg-[#D4A574] text-white'
                           : 'bg-[#2D2A26]/5 text-[#2D2A26]/50'
@@ -147,7 +147,7 @@ export default function TestPage() {
                     >
                       {String.fromCharCode(65 + index)}
                     </div>
-                    <span className="text-[#2D2A26] text-lg leading-relaxed">
+                    <span className="text-[#2D2A26] text-sm md:text-lg leading-relaxed">
                       {option.label}
                     </span>
                   </div>
@@ -159,8 +159,8 @@ export default function TestPage() {
       </div>
 
       {/* 底部提示 */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-[#FAF9F6] to-transparent pt-8 pb-6 pointer-events-none">
-        <p className="text-center text-xs text-[#2D2A26]/30">
+      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-[#FAF9F6] to-transparent pt-6 pb-4 md:pt-8 md:pb-6 pointer-events-none">
+        <p className="text-center text-[10px] md:text-xs text-[#2D2A26]/30">
           请根据第一直觉选择，没有对错之分
         </p>
       </div>
