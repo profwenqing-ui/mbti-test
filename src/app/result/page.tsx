@@ -121,20 +121,34 @@ function ResultContent() {
       >
         {/* ===== 结果头部 ===== */}
         <div className="text-center mb-12">
-          <div
-            className="inline-flex items-center justify-center w-20 h-20 rounded-full mb-6"
+          {/* 形象图 */}
+          <div className="relative w-40 h-40 mx-auto mb-6 rounded-2xl overflow-hidden shadow-lg"
             style={{ backgroundColor: mbtiType.color + '15' }}
           >
-            <span className="text-4xl">{mbtiType.emoji}</span>
+            <img
+              src={mbtiType.imageUrl}
+              alt={mbtiType.code}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+            <div
+              className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center text-sm backdrop-blur-sm"
+              style={{ backgroundColor: mbtiType.color + '60' }}
+            >
+              <span className="text-lg">{mbtiType.emoji}</span>
+            </div>
           </div>
-          <h1 className="text-5xl md:text-6xl font-bold text-[#2D2A26] mb-3 tracking-tight">
+          <h1 className="text-5xl md:text-6xl font-bold text-[#2D2A26] mb-2 tracking-tight">
             {mbtiType.code}
           </h1>
           <p
-            className="text-xl font-medium mb-2"
+            className="text-xl font-medium mb-1"
             style={{ color: mbtiType.color }}
           >
             {mbtiType.nickname}
+          </p>
+          <p className="text-[#2D2A26]/40 text-sm mb-3">
+            又称「{mbtiType.altNickname}」
           </p>
           <p className="text-[#2D2A26]/60 text-lg">{mbtiType.title}</p>
         </div>
