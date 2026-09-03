@@ -100,40 +100,69 @@ function ResultContent() {
     if (!shareCardRef.current) return;
     setCapturing(true);
     try {
-      await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 200));
+      // 使用 allowTaint: true 避免同源图片 CORS 问题
       const canvas = await html2canvas(shareCardRef.current, {
         backgroundColor: '#FAF9F6',
         scale: 2,
         useCORS: true,
-        allowTaint: false,
+        allowTaint: true,
         logging: false,
       });
       const blob = await new Promise<Blob | null>((resolve) =>
         canvas.toBlob(resolve, 'image/png', 1.0)
       );
-      if (!blob) return;
-
-      if (navigator.share && navigator.canShare) {
-        const file = new File([blob], `MBTI-${typeCode}.png`, { type: 'image/png' });
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: `我是${typeCode}型人格` });
-          return;
-        }
+      if (!blob) {
+        fallbackShare();
+        return;
       }
 
+      // 尝试原生分享（支持文件分享的浏览器）
+      try {
+        if (navigator.share && typeof navigator.canShare === 'function') {
+          const file = new File([blob], `MBTI-${typeCode}.png`, { type: 'image/png' });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: `我是${typeCode}型人格` });
+            return;
+          }
+        }
+      } catch {
+        // 原生分享失败，降级为下载
+      }
+
+      // 降级：下载图片
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `MBTI-${typeCode}.png`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
 
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
     } catch (e) {
-      console.error('截图分享失败', e);
+      console.error('截图失败', e);
+      fallbackShare();
     } finally {
       setCapturing(false);
+    }
+  }, [typeCode]);
+
+  // 降级分享：直接复制链接
+  const fallbackShare = useCallback(() => {
+    const shareUrl = `https://wenqingmbti.coze.site/share`;
+    if (navigator.share) {
+      navigator.share({ title: `我是${typeCode}型人格`, text: `我测出了${typeCode}型人格！来试试你的MBTI吧～`, url: shareUrl }).catch(() => {});
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
+      }).catch(() => {});
+    } else {
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
     }
   }, [typeCode]);
 
