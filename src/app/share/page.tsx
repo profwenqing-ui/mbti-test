@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { QRCodeCanvas } from 'qrcode.react';
 
-const APP_URL = 'https://mbti-test-snowy-iota.vercel.app';
+const APP_URL = 'https://wenqingmbti.top';
 
 export default function SharePage() {
   const [copied, setCopied] = useState(false);
